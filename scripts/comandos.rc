@@ -1,0 +1,10 @@
+# rcfile de bash para la pestaña "comandos" de tmux
+[ -f ~/.bashrc ] && . ~/.bashrc
+PS1='saga> '
+clear
+cat <<'AYUDA'
+Esta pestaña es una terminal común: acá se lanzan instancias del proceso (no es un servicio).
+  iniciar feliz | falla-cobro | falla-envio | falla-stock | falla-tecnica-cobro | duplicado | lote 5
+Pestañas: Ctrl+b 2 ordenes, 3 inventario, 4 pagos, 5 envios, 6 camunda, 1 volver acá
+AYUDA
+echo

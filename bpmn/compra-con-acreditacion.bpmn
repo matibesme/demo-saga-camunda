@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:modeler="http://camunda.org/schema/modeler/1.0" id="Definitions_compra-con-acreditacion" targetNamespace="http://bpmn.io/schema/bpmn" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.9.0">
+    <bpmn:error id="Err_Orden" name="ORDEN_INVALIDA" errorCode="ORDEN_INVALIDA" />
+  <bpmn:error id="Err_Stock" name="SIN_STOCK" errorCode="SIN_STOCK" />
+  <bpmn:error id="Err_Cobro" name="PAGO_RECHAZADO" errorCode="PAGO_RECHAZADO" />
+  <bpmn:error id="Err_Envio" name="ENVIO_NO_DISPONIBLE" errorCode="ENVIO_NO_DISPONIBLE" />
+  <bpmn:message id="Msg_pago" name="pago-acreditado"><bpmn:extensionElements><zeebe:subscription correlationKey="=pedidoId" /></bpmn:extensionElements></bpmn:message>
+  <bpmn:process id="compra-con-acreditacion" name="Compra (saga orquestada)" isExecutable="true">
+    <bpmn:startEvent id="Inicio" name="Pedido recibido"><bpmn:outgoing>F_inicio</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:serviceTask id="T_Orden" name="Crear orden"><bpmn:extensionElements><zeebe:taskDefinition type="crear-orden" retries="3" /></bpmn:extensionElements></bpmn:serviceTask>
+    <bpmn:boundaryEvent id="E_Orden" name="ORDEN_INVALIDA" attachedToRef="T_Orden"><bpmn:errorEventDefinition id="ED_Orden" errorRef="Err_Orden" /></bpmn:boundaryEvent>
+    <bpmn:boundaryEvent id="C_Orden" name="Compensar crear orden" attachedToRef="T_Orden"><bpmn:compensateEventDefinition id="CD_Orden" /></bpmn:boundaryEvent>
+    <bpmn:serviceTask id="H_Orden" name="Cancelar orden" isForCompensation="true"><bpmn:extensionElements><zeebe:taskDefinition type="cancelar-orden" retries="3" /></bpmn:extensionElements></bpmn:serviceTask>
+    <bpmn:serviceTask id="T_Stock" name="Reservar stock"><bpmn:extensionElements><zeebe:taskDefinition type="reservar-stock" retries="3" /></bpmn:extensionElements></bpmn:serviceTask>
+    <bpmn:boundaryEvent id="E_Stock" name="SIN_STOCK" attachedToRef="T_Stock"><bpmn:errorEventDefinition id="ED_Stock" errorRef="Err_Stock" /></bpmn:boundaryEvent>
+    <bpmn:boundaryEvent id="C_Stock" name="Compensar reservar stock" attachedToRef="T_Stock"><bpmn:compensateEventDefinition id="CD_Stock" /></bpmn:boundaryEvent>
+    <bpmn:serviceTask id="H_Stock" name="Liberar stock" isForCompensation="true"><bpmn:extensionElements><zeebe:taskDefinition type="liberar-stock" retries="3" /></bpmn:extensionElements></bpmn:serviceTask>
+    <bpmn:serviceTask id="T_Cobro" name="Cobrar"><bpmn:extensionElements><zeebe:taskDefinition type="cobrar" retries="3" /></bpmn:extensionElements></bpmn:serviceTask>
+    <bpmn:boundaryEvent id="E_Cobro" name="PAGO_RECHAZADO" attachedToRef="T_Cobro"><bpmn:errorEventDefinition id="ED_Cobro" errorRef="Err_Cobro" /></bpmn:boundaryEvent>
+    <bpmn:boundaryEvent id="C_Cobro" name="Compensar cobrar" attachedToRef="T_Cobro"><bpmn:compensateEventDefinition id="CD_Cobro" /></bpmn:boundaryEvent>
+    <bpmn:serviceTask id="H_Cobro" name="Reembolsar" isForCompensation="true"><bpmn:extensionElements><zeebe:taskDefinition type="reembolsar" retries="3" /></bpmn:extensionElements></bpmn:serviceTask>
+    <bpmn:intermediateCatchEvent id="Acreditado" name="Pago acreditado"><bpmn:messageEventDefinition id="MD_pago" messageRef="Msg_pago" /></bpmn:intermediateCatchEvent>
+    <bpmn:serviceTask id="T_Envio" name="Programar envío"><bpmn:extensionElements><zeebe:taskDefinition type="programar-envio" retries="3" /></bpmn:extensionElements></bpmn:serviceTask>
+    <bpmn:boundaryEvent id="E_Envio" name="ENVIO_NO_DISPONIBLE" attachedToRef="T_Envio"><bpmn:errorEventDefinition id="ED_Envio" errorRef="Err_Envio" /></bpmn:boundaryEvent>
+    <bpmn:endEvent id="FinOk" name="Compra exitosa" />
+    <bpmn:intermediateThrowEvent id="Compensar" name="Compensar pasos completados"><bpmn:compensateEventDefinition id="CD_Compensar" waitForCompletion="true" /></bpmn:intermediateThrowEvent>
+    <bpmn:endEvent id="FinCompensada" name="Saga compensada" />
+    <bpmn:sequenceFlow id="F_inicio" sourceRef="Inicio" targetRef="T_Orden" />
+    <bpmn:sequenceFlow id="F_1" sourceRef="T_Orden" targetRef="T_Stock" />
+    <bpmn:sequenceFlow id="F_2" sourceRef="T_Stock" targetRef="T_Cobro" />
+    <bpmn:sequenceFlow id="F_3" sourceRef="T_Cobro" targetRef="Acreditado" />
+    <bpmn:sequenceFlow id="F_4" sourceRef="Acreditado" targetRef="T_Envio" />
+    <bpmn:sequenceFlow id="F_5" sourceRef="T_Envio" targetRef="FinOk" />
+    <bpmn:sequenceFlow id="F_fin_comp" sourceRef="Compensar" targetRef="FinCompensada" />
+    <bpmn:sequenceFlow id="FE_Orden" sourceRef="E_Orden" targetRef="Compensar" />
+    <bpmn:sequenceFlow id="FE_Stock" sourceRef="E_Stock" targetRef="Compensar" />
+    <bpmn:sequenceFlow id="FE_Cobro" sourceRef="E_Cobro" targetRef="Compensar" />
+    <bpmn:sequenceFlow id="FE_Envio" sourceRef="E_Envio" targetRef="Compensar" />
+    <bpmn:association id="A_Orden" associationDirection="One" sourceRef="C_Orden" targetRef="H_Orden" />
+    <bpmn:association id="A_Stock" associationDirection="One" sourceRef="C_Stock" targetRef="H_Stock" />
+    <bpmn:association id="A_Cobro" associationDirection="One" sourceRef="C_Cobro" targetRef="H_Cobro" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_compra-con-acreditacion">
+    <bpmndi:BPMNPlane id="Plane_compra-con-acreditacion" bpmnElement="compra-con-acreditacion">
+      <bpmndi:BPMNShape id="Inicio_di" bpmnElement="Inicio"><dc:Bounds x="152" y="182" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="132" y="224" width="76" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_Orden_di" bpmnElement="T_Orden"><dc:Bounds x="250" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="E_Orden_di" bpmnElement="E_Orden"><dc:Bounds x="314" y="142" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="235" y="88" width="130" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="C_Orden_di" bpmnElement="C_Orden"><dc:Bounds x="264" y="222" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="H_Orden_di" bpmnElement="H_Orden"><dc:Bounds x="250" y="330" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_Stock_di" bpmnElement="T_Stock"><dc:Bounds x="420" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="E_Stock_di" bpmnElement="E_Stock"><dc:Bounds x="484" y="142" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="405" y="88" width="130" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="C_Stock_di" bpmnElement="C_Stock"><dc:Bounds x="434" y="222" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="H_Stock_di" bpmnElement="H_Stock"><dc:Bounds x="420" y="330" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_Cobro_di" bpmnElement="T_Cobro"><dc:Bounds x="590" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="E_Cobro_di" bpmnElement="E_Cobro"><dc:Bounds x="654" y="142" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="575" y="88" width="130" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="C_Cobro_di" bpmnElement="C_Cobro"><dc:Bounds x="604" y="222" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="H_Cobro_di" bpmnElement="H_Cobro"><dc:Bounds x="590" y="330" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Acreditado_di" bpmnElement="Acreditado"><dc:Bounds x="760" y="182" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="735" y="224" width="86" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_Envio_di" bpmnElement="T_Envio"><dc:Bounds x="866" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="E_Envio_di" bpmnElement="E_Envio"><dc:Bounds x="930" y="142" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="851" y="88" width="130" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="FinOk_di" bpmnElement="FinOk"><dc:Bounds x="1036" y="182" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1014" y="224" width="80" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Compensar_di" bpmnElement="Compensar"><dc:Bounds x="1156" y="52" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1116" y="0" width="116" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="FinCompensada_di" bpmnElement="FinCompensada"><dc:Bounds x="1256" y="52" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1236" y="94" width="76" height="27" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="A_Orden_di" bpmnElement="A_Orden"><di:waypoint x="282" y="258" /><di:waypoint x="282" y="330" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="A_Stock_di" bpmnElement="A_Stock"><di:waypoint x="452" y="258" /><di:waypoint x="452" y="330" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="A_Cobro_di" bpmnElement="A_Cobro"><di:waypoint x="622" y="258" /><di:waypoint x="622" y="330" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_inicio_di" bpmnElement="F_inicio"><di:waypoint x="188" y="200" /><di:waypoint x="250" y="200" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_1_di" bpmnElement="F_1"><di:waypoint x="350" y="200" /><di:waypoint x="420" y="200" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_2_di" bpmnElement="F_2"><di:waypoint x="520" y="200" /><di:waypoint x="590" y="200" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_3_di" bpmnElement="F_3"><di:waypoint x="690" y="200" /><di:waypoint x="760" y="200" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_4_di" bpmnElement="F_4"><di:waypoint x="796" y="200" /><di:waypoint x="866" y="200" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_5_di" bpmnElement="F_5"><di:waypoint x="966" y="200" /><di:waypoint x="1036" y="200" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_fin_comp_di" bpmnElement="F_fin_comp"><di:waypoint x="1192" y="70" /><di:waypoint x="1256" y="70" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="FE_Orden_di" bpmnElement="FE_Orden"><di:waypoint x="332" y="142" /><di:waypoint x="332" y="70" /><di:waypoint x="1156" y="70" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="FE_Stock_di" bpmnElement="FE_Stock"><di:waypoint x="502" y="142" /><di:waypoint x="502" y="70" /><di:waypoint x="1156" y="70" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="FE_Cobro_di" bpmnElement="FE_Cobro"><di:waypoint x="672" y="142" /><di:waypoint x="672" y="70" /><di:waypoint x="1156" y="70" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="FE_Envio_di" bpmnElement="FE_Envio"><di:waypoint x="948" y="142" /><di:waypoint x="948" y="70" /><di:waypoint x="1156" y="70" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
